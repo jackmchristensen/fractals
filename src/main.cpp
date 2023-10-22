@@ -37,7 +37,7 @@ bool mouseLeft, mouseMid, mouseRight;
 
 
 GLuint points=0;  //number of points to display the object
-int steps=128;     //# of subdivisions
+int steps=64;     //# of subdivisions
 bool needRedisplay=false;
 GLfloat  sign=+1; //diretcion of rotation
 const GLfloat defaultIncrement=0.7f; //speed of rotation
