@@ -11,7 +11,9 @@
 /*       s to change rotation    */
 /*********************************/
 
+#include <GL/glew.h>
 #include <stdio.h>
+#include <fstream>
 #include <iostream>
 #include <string.h>
 #define _USE_MATH_DEFINES
@@ -20,6 +22,11 @@
 #include <string>
 #include <vector>			//Standard template library class
 #include <GL/freeglut.h>
+
+#include <glm/glm.hpp>
+#include <glm/gtc/matrix_transform.hpp>
+#include <glm/gtx/transform.hpp>
+#include <glm/gtc/type_ptr.hpp>
 
 
 //in house created libraries
@@ -43,9 +50,11 @@ GLfloat  sign=+1; //diretcion of rotation
 const GLfloat defaultIncrement=0.7f; //speed of rotation
 GLfloat  angleIncrement=defaultIncrement;
 float order = 8.f;
+GLuint shader = -1;
 
 vector <Vect3d> v;   //all the points will be stored here
 vector <float> c;	 // Color scalar, multiplier, something like that
+
 
 //window size
 GLint wWindow=1200;
@@ -56,6 +65,66 @@ GLint hWindow=800;
 bool tangentsFlag = false;
 bool pointsFlag = true;
 bool curveFlag = false;
+
+//Create a NULL-terminated string by reading the provided file
+static char* ReadShaderSource(const char* shaderFile)
+{
+	ifstream ifs(shaderFile, ios::in | ios::binary | ios::ate);
+	if (ifs.is_open())
+	{
+		unsigned int filesize = static_cast<unsigned int>(ifs.tellg());
+		ifs.seekg(0, ios::beg);
+		char* bytes = new char[filesize + 1];
+		memset(bytes, 0, filesize + 1);
+		ifs.read(bytes, filesize);
+		ifs.close();
+		return bytes;
+	}
+	return NULL;
+}
+
+static unsigned int CompileShader(unsigned int type, const std::string& source)
+{
+	unsigned int id = glCreateShader(type);
+	const char* src = source.c_str();
+	glShaderSource(id, 1, &src, nullptr);
+	glCompileShader(id);
+
+	int result;
+	glGetShaderiv(id, GL_COMPILE_STATUS, &result);
+	if (result == GL_FALSE)
+	{
+		int length;
+		glGetShaderiv(id, GL_INFO_LOG_LENGTH, &length);
+		char* message = (char*)alloca(length * sizeof(char));
+		glGetShaderInfoLog(id, length, &length, message);
+		std::cout << "Failed to compile " << (type == GL_VERTEX_SHADER ? "vertex" : "fragment") << " shader!" << std::endl;
+		std::cout << message << std::endl;
+		glDeleteShader(id);
+		return 0;
+	}
+
+	return id;
+}
+
+static unsigned int CreateShader(const std::string& vertexShaderFile, const std::string& fragmentShaderFile) 
+{
+	std::string vertexShader = ReadShaderSource(vertexShaderFile.c_str());
+	std::string fragmentShader = ReadShaderSource(fragmentShaderFile.c_str());
+	GLuint program = glCreateProgram();
+	unsigned int vs = CompileShader(GL_VERTEX_SHADER, vertexShader);
+	unsigned int fs = CompileShader(GL_FRAGMENT_SHADER, fragmentShader);
+
+	glAttachShader(program, vs);
+	glAttachShader(program, fs);
+	glLinkProgram(program);
+	glValidateProgram(program);
+
+	glDeleteShader(vs);
+	glDeleteShader(fs);
+
+	return program;
+}
 
 /*********************************
 Some OpenGL-related functions DO NOT TOUCH
@@ -123,45 +192,49 @@ void MandelbulbPoints(vector<Vect3d>* a, vector<float>* color, int n) {
 		for (float j = -1.f; j <= 1.f; j += step) {
 			bool edge = false;	// Only renders the edge
 			for (float k = -1.f; k <= 1.f; k += step) {
-				Vect3d zeta = Vect3d(0.f, 0.f, 0.f);
-				int iter = 0;
-				int maxIter = 20; // Controlls detail of the fractal
+				a->push_back(Vect3d(i, j, k));
+				color->push_back(i);
+				color->push_back(j);
+				color->push_back(k);
+				//Vect3d zeta = Vect3d(0.f, 0.f, 0.f);
+				//int iter = 0;
+				//int maxIter = 20; // Controlls detail of the fractal
 
-				while (true) {
-					// Convert zeta to spherical coordinates
-					// Could be moved to its own function to keep things clean
-					float xx = zeta.x() * zeta.x();
-					float yy = zeta.y() * zeta.y();
-					float zz = zeta.z() * zeta.z();
-					float rad = sqrt(xx + yy + zz);
-					float theta = atan2(sqrt(xx + yy), zeta.z());
-					float phi = atan2(zeta.y(), zeta.x());
+				//while (true) {
+				//	// Convert zeta to spherical coordinates
+				//	// Could be moved to its own function to keep things clean
+				//	float xx = zeta.x() * zeta.x();
+				//	float yy = zeta.y() * zeta.y();
+				//	float zz = zeta.z() * zeta.z();
+				//	float rad = sqrt(xx + yy + zz);
+				//	float theta = atan2(sqrt(xx + yy), zeta.z());
+				//	float phi = atan2(zeta.y(), zeta.x());
 
-					// Mandelbulb algorithm
-					Vect3d newVect = Vect3d(pow(rad, order) * sin(theta * order) * cos(phi * order),
-											pow(rad, order) * sin(theta * order) * sin(phi * order),
-											pow(rad, order) * cos(theta * order));
+				//	// Mandelbulb algorithm
+				//	Vect3d newVect = Vect3d(pow(rad, order) * sin(theta * order) * cos(phi * order),
+				//							pow(rad, order) * sin(theta * order) * sin(phi * order),
+				//							pow(rad, order) * cos(theta * order));
 
-					zeta = Vect3d(i + newVect.x(), j + newVect.y(), k + newVect.z());
-					iter++;
-					
-					// Checks if zeta converges
-					if (rad > 2.f) {
-						if (edge) edge = false;
-						break;
-					}
-					// Only saves point (i, j, k) if zeta diverges
-					if (iter > maxIter) {
-						if (!edge) {
-							edge = true;
-							Vect3d mandelPoint = Vect3d(i, j, k);
-							float col = mandelPoint.Length() / sqrt(2.f);
-							a->push_back(mandelPoint);
-							color->push_back(col);
-						}
-						break;
-					}
-				}
+				//	zeta = Vect3d(i + newVect.x(), j + newVect.y(), k + newVect.z());
+				//	iter++;
+				//	
+				//	// Checks if zeta converges
+				//	if (rad > 2.f) {
+				//		if (edge) edge = false;
+				//		break;
+				//	}
+				//	// Only saves point (i, j, k) if zeta diverges
+				//	if (iter > maxIter) {
+				//		if (!edge) {
+				//			edge = true;
+				//			Vect3d mandelPoint = Vect3d(i, j, k);
+				//			float col = mandelPoint.Length() / sqrt(2.f);
+				//			a->push_back(mandelPoint);
+				//			color->push_back(col);
+				//		}
+				//		break;
+				//	}
+				//}
 			}
 		}
 	}
@@ -241,12 +314,12 @@ void Lab01() {
 //the main rendering function
 void RenderObjects()
 {
-	glPolygonMode(GL_FRONT_AND_BACK,GL_LINE);
+	glPolygonMode(GL_FRONT_AND_BACK, GL_LINE);
 	//set camera
 	glMatrixMode(GL_MODELVIEW);
 	trackball.Set3DViewCamera();
 	//call the student's code from here
-	Lab01();
+	//Lab01();
 }
 
 //Add here if you want to control some global behavior
@@ -276,10 +349,10 @@ void Kbd(unsigned char a, int x, int y)//keyboard callback
 		InitArray(steps);
 		break;
 	}
-	case 'r': {
-		Randomize(&v);
-		break;
-	}
+	//case 'r': {
+	//	Randomize(&v);
+	//	break;
+	//}
 	}
 	cout << "[points]=[" << steps << "]" << endl;
 	glutPostRedisplay();
@@ -310,7 +383,13 @@ void Idle(void)
 
 void Display(void)
 {
+	/*glm::mat4 V = glm::lookAt(glm::vec3(0.f, 0.f, 1.f), glm::vec3(0.f, 0.f, 0.f), glm::vec3(0.f, 1.f, 0.f));
+	glm::mat4 P = glm::perspective(glm::pi<float>() / 2.0f, (float)wWindow / (float)hWindow, 0.1f, 100.0f);
 
+	glUniformMatrix4fv(glGetUniformLocation(shader, "V"), 1, false, glm::value_ptr(V));
+	glUniformMatrix4fv(glGetUniformLocation(shader, "P"), 1, false, glm::value_ptr(P));*/
+
+	//glUseProgram(shader);
 }
 
 void Mouse(int button, int state, int x, int y) {
@@ -353,6 +432,14 @@ void MouseMotion(int x, int y) {
 	glutPostRedisplay();
 }
 
+void init()
+{
+	glewInit();
+	shader = CreateShader("shaders/vs.glsl", "shaders/fs.glsl");
+	glUseProgram(shader);
+
+	glPolygonMode(GL_FRONT_AND_BACK, GL_POINT);
+}
 
 int main(int argc, char **argv)
 { 
@@ -360,7 +447,7 @@ int main(int argc, char **argv)
   glutInit(&argc, argv);
   glutInitWindowSize(wWindow,hWindow);
   glutInitWindowPosition(500,100);
-  glutCreateWindow("Surface of Revolution");
+  glutCreateWindow("Fractal");
   //GLenum err = glewInit();
   // if (GLEW_OK != err){
   // fprintf(stderr, "Error: %s\n", glewGetErrorString(err));
@@ -374,6 +461,17 @@ int main(int argc, char **argv)
   glutMouseFunc(Mouse);
   glutMotionFunc(MouseMotion);
   InitArray(steps);
+  init();
+
+  /*unsigned int buffer = -1;
+  glGenBuffers(1, &buffer);
+  std::cout << glIsBuffer(buffer) << std::endl;
+  glBindBuffer(GL_ARRAY_BUFFER, buffer);
+  glBufferData(GL_ARRAY_BUFFER, 3 * c.size() * sizeof(float), 0, GL_STATIC_DRAW);
+
+  glEnableVertexAttribArray(0);
+  glVertexAttribPointer(0, 3, GL_FLOAT, 0, 0, 0);*/
+
   glutMainLoop();
   return 0;        
 }
