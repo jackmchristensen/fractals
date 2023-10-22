@@ -1,5 +1,3 @@
 ﻿  main.cpp
 C:\Users\Jack\Downloads\Lab01(2)\Lab01\Fractals\src\main.cpp(236,10): warning C4305: 'argument': truncation from 'double' to 'const float'
-  vect3d.cpp
-  Generating Code...
   Fractal.vcxproj -> C:\Users\Jack\Downloads\Lab01(2)\Lab01\Fractals\x64\Debug\Fractal.exe

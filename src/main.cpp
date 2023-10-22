@@ -2,7 +2,7 @@
 /* CS 590CGS Lab framework        */
 /* (C) Bedrich Benes 2020        */
 /* bbenes ~ at ~ purdue.edu      */
-/* Press +,- to add/remove points*/
+/* Press +,- to change order	 */
 /*       r to randomize          */
 /*       s to change rotation    */
 /*       c to render curve       */
@@ -42,6 +42,7 @@ bool needRedisplay=false;
 GLfloat  sign=+1; //diretcion of rotation
 const GLfloat defaultIncrement=0.7f; //speed of rotation
 GLfloat  angleIncrement=defaultIncrement;
+float order = 8.f;
 
 vector <Vect3d> v;   //all the points will be stored here
 vector <float> c;	 // Color scalar, multiplier, something like that
@@ -116,7 +117,6 @@ LAB related MODIFY
 // Defines the points that make up the mandelbulb
 void MandelbulbPoints(vector<Vect3d>* a, vector<float>* color, int n) {
 	float step = 1.f/n;
-	const float order = 2.f; // Changing order allows for different fractals. Classic Mandelbulb is order = 8.f
 
 	// Iterates through a cube of points (i, j, k)
 	for (float i = -1.f; i <= 1.f; i += step) {
@@ -266,13 +266,13 @@ void Kbd(unsigned char a, int x, int y)//keyboard callback
 	}
 	case 's': {sign = -sign; break; }
 	case '-': {
-		steps--;
-		if (steps<1) steps = 1;
+		order -= 0.5f;
+		if (order < 1.f) order = 1.f;
 		InitArray(steps);
 		break;
 	}
 	case '+': {
-		steps++;
+		order += 0.5f;
 		InitArray(steps);
 		break;
 	}
