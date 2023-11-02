@@ -74,6 +74,8 @@ namespace grid
 
     float order = 8.f;
     int max_iterations = 10;
+
+    int fractal_type = 0;
 }
 
 // Grid of voxels
@@ -128,9 +130,13 @@ void draw_gui(GLFWwindow* window)
 
     ImGui::Text("Application average %.3f ms/frame (%.1f FPS)", 1000.0f / ImGui::GetIO().Framerate, ImGui::GetIO().Framerate);
     ImGui::Text("Camera Position: (%.3f, %.3f, %.3f)", scene::camera.position().x, scene::camera.position().y, scene::camera.position().z);
+    ImGui::RadioButton("Mandelbulb", &grid::fractal_type, 0);
+    ImGui::RadioButton("Mandelbox", &grid::fractal_type, 1);
+    ImGui::RadioButton("Menger Sponge", &grid::fractal_type, 2);
     ImGui::SliderFloat("Order", &grid::order, 1.0, 16.0);
     ImGui::SliderInt("Max Iterations", &grid::max_iterations, 1, 100);
     ImGui::SliderFloat("FOV (degrees)", &scene::fov, 1.0, 179.0);
+    ImGui::SliderFloat("Point Size", &grid::point_size, 1.0, 10.0);
     ImGui::End();
 
     // End ImGui Frame
@@ -175,6 +181,12 @@ void display(GLFWwindow* window)
     {
         glUniform1f(point_size_loc, grid::point_size);
     }
+    int fractal_type_loc = glGetUniformLocation(scene::shader, "fractal_type");
+    if (fractal_type_loc != -1)
+    {
+        glUniform1i(fractal_type_loc, grid::fractal_type);
+    }
+
 
     glBindVertexArray(grid::vao);
     glDrawArrays(GL_POINTS, 0, grid::points.size() / 3);

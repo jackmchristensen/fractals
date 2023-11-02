@@ -2,6 +2,7 @@
 
 uniform float order;
 uniform int max_iterations;
+uniform int fractal_type;
 
 in vec4 v_pos;
 
@@ -138,9 +139,12 @@ void main(void)
 	// MengerSponge:	maxIterations = 4;		order = Not really used
 	float val;
 
-	//val = Mandelbulb(v_pos.xyz, max_iterations);
-	//val = Mandelbox(v_pos.xyz, v_pos.xyz, max_iterations);
-	val = MengerSponge(v_pos.xyz, 1.0, max_iterations);
+	if (fractal_type == 1)
+		val = Mandelbox(v_pos.xyz, v_pos.xyz, max_iterations);
+	else if (fractal_type == 2)
+		val = MengerSponge(v_pos.xyz, 1.0, max_iterations);
+	else
+		val = Mandelbulb(v_pos.xyz, max_iterations);
 
 	fragcolor = vec4(vec2(val), 1.0, 1.0);
 
