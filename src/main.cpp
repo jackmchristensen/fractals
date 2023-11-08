@@ -27,7 +27,7 @@ namespace window
     // Some VS specific code
     // const char* const title = USER_NAME " " PROJECT_NAME; //defined in project settings
     int size[2] = {1920, 1080};
-    float clear_color[4] = {0.35f, 0.35f, 0.35f, 1.0f};
+    float clear_color[4] = {0.35f, 0.35f, 0.35f, 0.0f};
 }
 
 namespace scene
@@ -69,7 +69,7 @@ namespace grid
     const int pos_loc = 0;
 
     float dim = 3.0;
-    float res = 256.f;
+    float res = 128.f;
     float point_size = 3.0;
 
     float order = 8.f;
@@ -81,7 +81,7 @@ namespace grid
 // Grid of voxels
 void init_grid()
 {
-    float steps = 1.f / grid::res * grid::dim;
+    /*float steps = 1.f / grid::res * grid::dim;
 
     for (float i = grid::dim/-2.f; i < grid::dim/2.f; i += steps)
     {
@@ -94,7 +94,23 @@ void init_grid()
                 grid::points.push_back(k);
             }
         }
-    }
+    }*/
+
+    grid::points.push_back(-1.0);
+    grid::points.push_back(1.0);
+    grid::points.push_back(0.0);
+
+    grid::points.push_back(-1.0);
+    grid::points.push_back(-1.0);
+    grid::points.push_back(0.0);
+
+    grid::points.push_back(1.0);
+    grid::points.push_back(1.0);
+    grid::points.push_back(0.0);
+
+    grid::points.push_back(1.0);
+    grid::points.push_back(-1.0);
+    grid::points.push_back(0.0);
 
     glBindAttribLocation(scene::shader, grid::pos_loc, "pos_attrib");
 
@@ -166,6 +182,16 @@ void display(GLFWwindow* window)
        glm::mat4 PVM = P * V * M;
        glUniformMatrix4fv(PVM_loc, 1, false, glm::value_ptr(PVM));
     }
+    int P_loc = glGetUniformLocation(scene::shader, "P");
+    if (P_loc != -1)
+    {
+        glUniformMatrix4fv(P_loc, 1, false, glm::value_ptr(P));
+    }
+    int V_loc = glGetUniformLocation(scene::shader, "V");
+    if (V_loc != -1)
+    {
+        glUniformMatrix4fv(V_loc, 1, false, glm::value_ptr(V));
+    }
     int order_loc = glGetUniformLocation(scene::shader, "order");
     if (order_loc != -1)
     {
@@ -187,9 +213,15 @@ void display(GLFWwindow* window)
         glUniform1i(fractal_type_loc, grid::fractal_type);
     }
 
+    int cam_pos_loc = glGetUniformLocation(scene::shader, "cam_pos");
+    if (cam_pos_loc != -1)
+    {
+        glUniform3fv(cam_pos_loc, 1, glm::value_ptr(scene::camera.position()));
+    }
+
 
     glBindVertexArray(grid::vao);
-    glDrawArrays(GL_POINTS, 0, grid::points.size() / 3);
+    glDrawArrays(GL_TRIANGLE_STRIP, 0, grid::points.size() / 3);
 
     draw_gui(window);
 
@@ -365,6 +397,8 @@ void init()
 
     glEnable(GL_DEPTH_TEST);
     glEnable(GL_PROGRAM_POINT_SIZE);
+    glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+    glEnable(GL_BLEND);
 }
 
 

@@ -1,8 +1,11 @@
 #version 400
 
+uniform mat4 P;
+uniform mat4 V;
 uniform float order;
 uniform int max_iterations;
 uniform int fractal_type;
+uniform vec3 cam_pos;
 
 in vec4 v_pos;
 
@@ -130,14 +133,74 @@ float MengerSponge(vec3 pos, float scale, int iterations) {
 	return length(init_pos) / 3.0; // Not inside any hole, so keep
 }
 
+// Return the normalized escape-time density of a point for the Mandelbulb
+float MandelbulbDensity(vec3 position, float bailout, int maxIterations, float power) {
+	vec3 z = position;
+	float dr = 1.0;
+	float r = 0.0;
+	for (int i = 0; i < maxIterations; i++) {
+		r = length(z);
+		if (r > bailout) {
+			// The point escaped, return a normalized density based on the iteration count
+			float density = float(i) / float(maxIterations);
+			return density;
+		}
+
+		// Convert to polar coordinates
+		float theta = acos(z.z / r);
+		float phi = atan(z.y, z.x);
+		dr = pow(r, power - 1.0) * power * dr + 1.0;
+
+		// Scale and rotate the point
+		float zr = pow(r, power);
+		theta *= power;
+		phi *= power;
+
+		// Convert back to Cartesian coordinates
+		z = zr * vec3(sin(theta) * cos(phi), sin(phi) * sin(theta), cos(theta));
+		z += position;
+	}
+	// The point didn't escape, consider it as fully inside the fractal (max density)
+	return 1.0;
+}
+
 void main(void)
 {
+	vec3 ray_origin = cam_pos;
+
+	vec2 ndc_pos = 2.0 * vec2(gl_FragCoord.x / 1920, gl_FragCoord.y / 1080) - 1.0;
+	vec4 cam_dir = inverse(P) * vec4(ndc_pos, 1.0, 1.0);
+	cam_dir /= cam_dir.w;
+	cam_dir = vec4(cam_dir.xyz, 0.0);
+
+	vec4 ray_dir = normalize(inverse(V) * cam_dir);
+
+	vec4 accumulate_color = vec4(0.0);
+	float accumulate_alpha = 0.0;
+	float step_size = 0.005;
+	float max_step_size = 100.0;
+
+	for (float t = 0.0; t < max_step_size; t += step_size)
+	{
+		vec3 sample_pos = ray_origin + t * ray_dir.xyz;
+		float density = MandelbulbDensity(sample_pos, 2.0, 1000, order);
+		vec4 sample_color = vec4(vec3(length(sample_pos), length(sample_pos), 1.0), density);
+
+		accumulate_color = sample_color;
+		//accumulate_color.rgb += (1 - accumulate_alpha) * sample_color.a * sample_color.rgb;
+		accumulate_alpha += (1 - accumulate_alpha) * sample_color.a;
+
+		if (accumulate_alpha > 0.95) break;
+	}
+	fragcolor = accumulate_color;
+
+
 	// max_iterations and order seem to be different for different fractals here are some good values to start with
 	// max_iterations and order can be changed through the GUI
 	// Mandelbul:		maxIterations = 100;	order = 8.0;
 	// Mandelbox:		maxIterations = 10;		order = 2.0;
 	// MengerSponge:	maxIterations = 4;		order = Not really used
-	float val;
+	/*float val;
 
 	if (fractal_type == 1)
 		val = Mandelbox(v_pos.xyz, v_pos.xyz, max_iterations);
@@ -146,7 +209,7 @@ void main(void)
 	else
 		val = Mandelbulb(v_pos.xyz, max_iterations);
 
-	fragcolor = vec4(vec2(val), 1.0, 1.0);
+	fragcolor = vec4(vec2(val), 1.0, 1.0);*/
 
 	/******** Quaternion Julia Fractal - Currently doesn't work ********/
 	//vec3 rotatedPos = rotate_vector(v_pos.xyz, vec3(0.0, 0.0, 1.0), order); // Example rotation
