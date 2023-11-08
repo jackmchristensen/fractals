@@ -74,6 +74,7 @@ namespace grid
 
     float order = 8.f;
     int max_iterations = 10;
+    float step_size = 0.05;
 
     int fractal_type = 0;
 }
@@ -81,7 +82,7 @@ namespace grid
 // Grid of voxels
 void init_grid()
 {
-    /*float steps = 1.f / grid::res * grid::dim;
+    float steps = 1.f / grid::res * grid::dim;
 
     for (float i = grid::dim/-2.f; i < grid::dim/2.f; i += steps)
     {
@@ -94,9 +95,9 @@ void init_grid()
                 grid::points.push_back(k);
             }
         }
-    }*/
+    }
 
-    grid::points.push_back(-1.0);
+    /*grid::points.push_back(-1.0);
     grid::points.push_back(1.0);
     grid::points.push_back(0.0);
 
@@ -110,7 +111,7 @@ void init_grid()
 
     grid::points.push_back(1.0);
     grid::points.push_back(-1.0);
-    grid::points.push_back(0.0);
+    grid::points.push_back(0.0);*/
 
     glBindAttribLocation(scene::shader, grid::pos_loc, "pos_attrib");
 
@@ -150,6 +151,7 @@ void draw_gui(GLFWwindow* window)
     ImGui::RadioButton("Mandelbox", &grid::fractal_type, 1);
     ImGui::RadioButton("Menger Sponge", &grid::fractal_type, 2);
     ImGui::SliderFloat("Order", &grid::order, 1.0, 16.0);
+    ImGui::SliderFloat("Step Size", &grid::step_size, 0.0001, 1.0);
     ImGui::SliderInt("Max Iterations", &grid::max_iterations, 1, 100);
     ImGui::SliderFloat("FOV (degrees)", &scene::fov, 1.0, 179.0);
     ImGui::SliderFloat("Point Size", &grid::point_size, 1.0, 10.0);
@@ -212,6 +214,11 @@ void display(GLFWwindow* window)
     {
         glUniform1i(fractal_type_loc, grid::fractal_type);
     }
+    int step_size_loc = glGetUniformLocation(scene::shader, "step_size");
+    if (step_size_loc != -1)
+    {
+        glUniform1f(step_size_loc, grid::step_size);
+    }
 
     int cam_pos_loc = glGetUniformLocation(scene::shader, "cam_pos");
     if (cam_pos_loc != -1)
@@ -221,7 +228,7 @@ void display(GLFWwindow* window)
 
 
     glBindVertexArray(grid::vao);
-    glDrawArrays(GL_TRIANGLE_STRIP, 0, grid::points.size() / 3);
+    glDrawArrays(GL_POINTS, 0, grid::points.size() / 3);
 
     draw_gui(window);
 

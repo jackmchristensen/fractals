@@ -3,6 +3,7 @@
 uniform mat4 P;
 uniform mat4 V;
 uniform float order;
+uniform float step_size;
 uniform int max_iterations;
 uniform int fractal_type;
 uniform vec3 cam_pos;
@@ -164,6 +165,18 @@ float MandelbulbDensity(vec3 position, float bailout, int maxIterations, float p
 	return 1.0;
 }
 
+
+vec4 TransferFunction(float density) {
+	// Convert density to a grayscale color
+	vec3 color = vec3(density);
+
+	// Set opacity based on density
+	float alpha = clamp(density, 0.0, 1.0);
+
+	return vec4(color, alpha);
+}
+
+
 void main(void)
 {
 	vec3 ray_origin = cam_pos;
@@ -177,20 +190,21 @@ void main(void)
 
 	vec4 accumulate_color = vec4(0.0);
 	float accumulate_alpha = 0.0;
-	float step_size = 0.1;
-	float max_step_size = 100.0;
+	//float step_size = 0.005;
+	float max_step_size = 10.0;
 
 	for (float t = 0.0; t < max_step_size; t += step_size)
 	{
 		vec3 sample_pos = ray_origin + t * ray_dir.xyz;
-		float density = MandelbulbDensity(sample_pos, 2.0, 40, order);
-		vec4 sample_color = vec4(vec3(0.1, 0.5, 1.0), density);
+		float density = MandelbulbDensity(sample_pos, 2.0, max_iterations, order);
+		//vec4 sample_color = TransferFunction(density);
+		vec4 sample_color = vec4(vec2(length(sample_pos) / sqrt(2.0)), 1.0, density);
 
 		accumulate_color = sample_color;
-		//accumulate_color.rgb += (1 - accumulate_alpha) * sample_color.a * sample_color.rgb;
+		//accumulate_color.rgb += (1.0 - accumulate_alpha)  * sample_color.rgb;
 		accumulate_alpha += (1 - accumulate_alpha) * sample_color.a;
 
-		if (accumulate_alpha > 0.95) break;
+		if (accumulate_alpha >= 0.95) break;
 	}
 	fragcolor = accumulate_color;
 

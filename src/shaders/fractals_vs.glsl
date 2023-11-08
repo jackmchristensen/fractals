@@ -16,6 +16,6 @@ void main(void)
 	vec3 rand_position = vec3(pos_attrib.x + (rand(vec2(pos_attrib.y, pos_attrib.z)) / 100.0), 
 							  pos_attrib.y + (rand(vec2(pos_attrib.x, pos_attrib.z)) / 100.0), 
 							  pos_attrib.z + (rand(vec2(pos_attrib.y, pos_attrib.x)) / 100.0));
-	gl_Position = vec4(pos_attrib, 1.0); //transform vertices and send result into pipeline
-	//v_pos = vec4(rand_position, 1.0);
+	gl_Position = PVM*vec4(rand_position, 1.0); //transform vertices and send result into pipeline
+	v_pos = vec4(rand_position, 1.0);
 }
