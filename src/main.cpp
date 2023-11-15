@@ -22,11 +22,13 @@
 #include "InitShader.h"    // Functions for loading shaders from text files
 #include "Camera.h"
 
+#include <chrono>
+
 namespace window
 {
     // Some VS specific code
     // const char* const title = USER_NAME " " PROJECT_NAME; //defined in project settings
-    int size[2] = {1920, 1080};
+    int size[2] = {800, 600};
     float clear_color[4] = {0.35f, 0.35f, 0.35f, 0.0f};
 }
 
@@ -46,6 +48,15 @@ namespace scene
     float pitch = 0.f;
 
     GLuint shader = -1;
+    GLuint textureID = -1;
+
+    int color_palette = 0;
+
+    glm::vec3 color1 = glm::vec3(0.0, 0.0, 1.0); // Blue
+    glm::vec3 color2 = glm::vec3(0.0, 1.0, 1.0); // Cyan
+    glm::vec3 color3 = glm::vec3(0.0, 1.0, 0.0); // Green
+    glm::vec3 color4 = glm::vec3(1.0, 1.0, 0.0); // Yellow
+    glm::vec3 color5 = glm::vec3(1.0, 0.0, 0.0); // Red
 }
 
 namespace mouse
@@ -62,14 +73,20 @@ namespace mouse
 
 namespace grid
 {
+    int resolution = 128;
+    //std::vector <float> points(resolution* resolution* resolution *4);
     std::vector <float> points;
-    unsigned int vbo = -1;
-    unsigned int vao = -1;
+    std::vector <double> density;
+    unsigned int points_vbo = -1;
+    unsigned int points_vao = -1;
+    unsigned int density_vbo = -1;
+    unsigned int density_vao = -1;
 
     const int pos_loc = 0;
+    const int density_loc = 1;
 
-    float dim = 3.0;
-    float res = 128.f;
+    float dim = 2.0;
+    float res = 64.0;
     float point_size = 3.0;
 
     float order = 8.f;
@@ -79,25 +96,38 @@ namespace grid
     int fractal_type = 0;
 }
 
+int MandelbulbIteration(glm::vec3 point, float order, int maxIterations) {
+    glm::vec3 z = point;
+    float dr = 1.0;
+    float r = 0.0;
+    int i = 0;
+    for (i = 0; i < maxIterations; i++) {
+        r = glm::length(z);
+        if (r > 2.0)
+        {
+            //std::cout << i << std::endl;
+            break; // Escape condition
+        }
+        // Convert to polar coordinates
+        float theta = acos(z.z / r);
+        float phi = atan2(z.y, z.x);
+        dr = pow(r, order - 1.0) * order * dr + 1.0;
+
+        // Scale and rotate the point
+        float zr = pow(r, order);
+        theta *= order;
+        phi *= order;
+
+        // Convert back to Cartesian coordinates
+        z = glm::vec3(sin(theta) * cos(phi), sin(phi) * sin(theta), cos(theta)) * zr + point;
+    }
+    return i;
+}
+
 // Grid of voxels
 void init_grid()
 {
-    float steps = 1.f / grid::res * grid::dim;
-
-    for (float i = grid::dim/-2.f; i < grid::dim/2.f; i += steps)
-    {
-        for (float j = grid::dim/-2.f; j < grid::dim/2.f; j += steps)
-        {
-            for (float k = grid::dim/-2.f; k < grid::dim/2.f; k += steps)
-            {
-                grid::points.push_back(i);
-                grid::points.push_back(j);
-                grid::points.push_back(k);
-            }
-        }
-    }
-
-    /*grid::points.push_back(-1.0);
+    grid::points.push_back(-1.0);
     grid::points.push_back(1.0);
     grid::points.push_back(0.0);
 
@@ -111,23 +141,85 @@ void init_grid()
 
     grid::points.push_back(1.0);
     grid::points.push_back(-1.0);
-    grid::points.push_back(0.0);*/
+    grid::points.push_back(0.0);
 
     glBindAttribLocation(scene::shader, grid::pos_loc, "pos_attrib");
 
-    glGenVertexArrays(1, &grid::vao);
-    glBindVertexArray(grid::vao);
+    glGenVertexArrays(1, &grid::points_vao);
+    glBindVertexArray(grid::points_vao);
 
-    glGenBuffers(1, &grid::vbo);
-    glBindBuffer(GL_ARRAY_BUFFER, grid::vbo);
+    glGenBuffers(1, &grid::points_vbo);
+    glBindBuffer(GL_ARRAY_BUFFER, grid::points_vbo);
     glBufferData(GL_ARRAY_BUFFER, grid::points.size() * sizeof(float), &grid::points[0], GL_STATIC_DRAW);
 
     glEnableVertexAttribArray(grid::pos_loc);
-    glVertexAttribPointer(grid::pos_loc, 3, GL_FLOAT, 0, 0, 0);
+    glVertexAttribPointer(grid::pos_loc, 3, GL_FLOAT, 1, 0, 0);
+}
 
-    glBindVertexArray(0);
-    glBindBuffer(GL_ARRAY_BUFFER, 0);
-    glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, 0);
+void init_voxels()
+{
+    int gridSize = 512;
+    std::ifstream inFile("../cache/voxels_512_density.bin", std::ios::binary);
+    std::vector<float> densityData(gridSize * gridSize * gridSize);
+    inFile.read(reinterpret_cast<char*>(densityData.data()), densityData.size() * sizeof(float));
+
+    if (!inFile.is_open()) {
+        std::cerr << "Failed to open the file" << std::endl;
+        return;
+    }
+
+    glBindAttribLocation(scene::shader, grid::pos_loc, "pos_attrib");
+
+    GLuint textureID;
+    glGenTextures(1, &textureID);
+    glBindTexture(GL_TEXTURE_3D, textureID);
+    // set the texture wrapping/filtering options (on the currently bound texture object)
+    glTexParameteri(GL_TEXTURE_3D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_BORDER);
+    glTexParameteri(GL_TEXTURE_3D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_BORDER);
+    glTexParameteri(GL_TEXTURE_3D, GL_TEXTURE_WRAP_R, GL_CLAMP_TO_BORDER);
+    glTexParameteri(GL_TEXTURE_3D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+    glTexParameteri(GL_TEXTURE_3D, GL_TEXTURE_MAG_FILTER, GL_LINEAR_MIPMAP_LINEAR);
+
+
+    glTexImage3D(GL_TEXTURE_3D, 0, GL_R32F, gridSize, gridSize, gridSize, 0, GL_RED, GL_FLOAT, densityData.data());
+}
+
+void color_palettes(int paletteNum)
+{
+    switch (paletteNum)
+    {
+        case 0:
+        {
+            scene::color1 = glm::vec3(0.0, 0.0, 1.0); // Blue
+            scene::color2 = glm::vec3(0.0, 1.0, 1.0); // Cyan
+            scene::color3 = glm::vec3(0.0, 1.0, 0.0); // Green
+            scene::color4 = glm::vec3(1.0, 1.0, 0.0); // Yellow
+            scene::color5 = glm::vec3(1.0, 0.0, 0.0); // Red
+            break;
+        }
+        case 1:
+        {
+            scene::color1 = glm::vec3(0.969, 0.145, 0.522);
+            scene::color2 = glm::vec3(0.447, 0.035, 0.718);
+            scene::color3 = glm::vec3(0.227, 0.047, 0.064);
+            scene::color4 = glm::vec3(0.263, 0.380, 0.933);
+            scene::color5 = glm::vec3(0.298, 0.788, 0.941);
+            break;
+        }
+        case 2:
+        {
+            scene::color1 = glm::vec3(0.051, 0.106, 0.165);
+            scene::color2 = glm::vec3(0.106, 0.149, 0.231);
+            scene::color3 = glm::vec3(0.255, 0.353, 0.467);
+            scene::color4 = glm::vec3(0.467, 0.553, 0.663);
+            scene::color5 = glm::vec3(0.878, 0.882, 0.867);
+            break;
+        }
+        default:
+        {
+            break;
+        }
+    }
 }
 
 // Draw the ImGui user interface
@@ -139,22 +231,32 @@ void draw_gui(GLFWwindow* window)
     ImGui::NewFrame();
 
     // Draw Gui
-    ImGui::Begin("Debug window");
+    /*ImGui::Begin("Debug window");
     if (ImGui::Button("Quit"))
     {
         glfwSetWindowShouldClose(window, GLFW_TRUE);
     }
 
     ImGui::Text("Application average %.3f ms/frame (%.1f FPS)", 1000.0f / ImGui::GetIO().Framerate, ImGui::GetIO().Framerate);
-    ImGui::Text("Camera Position: (%.3f, %.3f, %.3f)", scene::camera.position().x, scene::camera.position().y, scene::camera.position().z);
-    ImGui::RadioButton("Mandelbulb", &grid::fractal_type, 0);
-    ImGui::RadioButton("Mandelbox", &grid::fractal_type, 1);
-    ImGui::RadioButton("Menger Sponge", &grid::fractal_type, 2);
-    ImGui::SliderFloat("Order", &grid::order, 1.0, 16.0);
-    ImGui::SliderFloat("Step Size", &grid::step_size, 0.0001, 1.0);
-    ImGui::SliderInt("Max Iterations", &grid::max_iterations, 1, 100);
-    ImGui::SliderFloat("FOV (degrees)", &scene::fov, 1.0, 179.0);
-    ImGui::SliderFloat("Point Size", &grid::point_size, 1.0, 10.0);
+    ImGui::Text("Camera Position: (%.3f, %.3f, %.3f)", scene::camera.position().x, scene::camera.position().y, scene::camera.position().z);*/
+    ImGui::Text("Application average %.3f ms/frame (%.1f FPS)", 1000.0f / ImGui::GetIO().Framerate, ImGui::GetIO().Framerate);
+    ImGui::Separator();
+    if (ImGui::RadioButton("Color Palette 1", &scene::color_palette, 0)) color_palettes(scene::color_palette);
+    if (ImGui::RadioButton("Color Palette 2", &scene::color_palette, 1)) color_palettes(scene::color_palette);
+    if (ImGui::RadioButton("Color Palette 3", &scene::color_palette, 2)) color_palettes(scene::color_palette);
+    ImGui::ColorEdit3("Color 1", glm::value_ptr(scene::color1));
+    ImGui::ColorEdit3("Color 2", glm::value_ptr(scene::color2));
+    ImGui::ColorEdit3("Color 3", glm::value_ptr(scene::color3));
+    ImGui::ColorEdit3("Color 4", glm::value_ptr(scene::color4));
+    ImGui::ColorEdit3("Color 5", glm::value_ptr(scene::color5));
+    //ImGui::RadioButton("Mandelbulb", &grid::fractal_type, 0);
+    //ImGui::RadioButton("Mandelbox", &grid::fractal_type, 1);
+    //ImGui::RadioButton("Menger Sponge", &grid::fractal_type, 2);
+    //ImGui::SliderFloat("Order", &grid::order, 1.0, 16.0);
+    //ImGui::SliderFloat("Step Size", &grid::step_size, 0.0001, 1.0);
+    //ImGui::SliderInt("Max Iterations", &grid::max_iterations, 1, 100);
+    //ImGui::SliderFloat("FOV (degrees)", &scene::fov, 1.0, 179.0);
+    //ImGui::SliderFloat("Point Size", &grid::point_size, 1.0, 10.0);
     ImGui::End();
 
     // End ImGui Frame
@@ -171,7 +273,7 @@ void display(GLFWwindow* window)
 
     glm::mat4 M = glm::rotate(scene::angle, glm::vec3(0.0f, 0.0f, 1.0f));
     glm::mat4 V = glm::lookAt(scene::camera.position(), scene::camera.front(), scene::camera.up());
-    glm::mat4 P = glm::perspective(glm::pi<float>()/2.0f * (scene::fov / 90.0f), (float)window::size[0] / (float)window::size[1], 0.1f, 100.0f);
+    glm::mat4 P = glm::perspective(glm::pi<float>()/2.0f * (scene::fov / 90.0f), (float)window::size[0] / (float)window::size[1], 0.1f, 1000.0f);
  
     glViewport(0, 0, window::size[0], window::size[1]);
  
@@ -219,6 +321,16 @@ void display(GLFWwindow* window)
     {
         glUniform1f(step_size_loc, grid::step_size);
     }
+    int width_loc = glGetUniformLocation(scene::shader, "window_width");
+    if (width_loc != -1)
+    {
+        glUniform1i(width_loc, window::size[0]);
+    }
+    int height_loc = glGetUniformLocation(scene::shader, "window_height");
+    if (height_loc != -1)
+    {
+        glUniform1i(height_loc, window::size[1]);
+    }
 
     int cam_pos_loc = glGetUniformLocation(scene::shader, "cam_pos");
     if (cam_pos_loc != -1)
@@ -226,9 +338,35 @@ void display(GLFWwindow* window)
         glUniform3fv(cam_pos_loc, 1, glm::value_ptr(scene::camera.position()));
     }
 
+    int color1_loc = glGetUniformLocation(scene::shader, "color1");
+    if (color1_loc != -1)
+    {
+        glUniform3fv(color1_loc, 1, glm::value_ptr(scene::color1));
+    }
+    int color2_loc = glGetUniformLocation(scene::shader, "color2");
+    if (color2_loc != -1)
+    {
+        glUniform3fv(color2_loc, 1, glm::value_ptr(scene::color2));
+    }
+    int color3_loc = glGetUniformLocation(scene::shader, "color3");
+    if (color3_loc != -1)
+    {
+        glUniform3fv(color3_loc, 1, glm::value_ptr(scene::color3));
+    }
+    int color4_loc = glGetUniformLocation(scene::shader, "color4");
+    if (color4_loc != -1)
+    {
+        glUniform3fv(color4_loc, 1, glm::value_ptr(scene::color4));
+    }
+    int color5_loc = glGetUniformLocation(scene::shader, "color5");
+    if (color5_loc != -1)
+    {
+        glUniform3fv(color5_loc, 1, glm::value_ptr(scene::color5));
+    }
 
-    glBindVertexArray(grid::vao);
-    glDrawArrays(GL_POINTS, 0, grid::points.size() / 3);
+
+    glBindVertexArray(grid::points_vao);
+    glDrawArrays(GL_TRIANGLE_STRIP, 0, grid::points.size() / 3);
 
     draw_gui(window);
 
@@ -398,6 +536,7 @@ void init()
     reload_shader();
 
     init_grid();
+    init_voxels();
 
     // Set the color the screen will be cleared to when glClear is called
     glClearColor(window::clear_color[0], window::clear_color[1], window::clear_color[2], window::clear_color[3]);
@@ -406,6 +545,7 @@ void init()
     glEnable(GL_PROGRAM_POINT_SIZE);
     glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
     glEnable(GL_BLEND);
+    glDisable(GL_CULL_FACE);
 }
 
 

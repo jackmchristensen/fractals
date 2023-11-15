@@ -1,4 +1,4 @@
-#version 400
+#version 430
 
 uniform mat4 P;
 uniform mat4 V;
@@ -7,8 +7,21 @@ uniform float step_size;
 uniform int max_iterations;
 uniform int fractal_type;
 uniform vec3 cam_pos;
+//uniform sampler3D voxelTexture;
+uniform sampler3D densityTexture;
+uniform int window_width;
+uniform int window_height;
+
+uniform vec3 color1;
+uniform vec3 color2;
+uniform vec3 color3;
+uniform vec3 color4;
+uniform vec3 color5;
+
 
 in vec4 v_pos;
+in float v_density;
+in vec3 texCoords;
 
 out vec4 fragcolor; //the output color for this fragment 
 
@@ -176,12 +189,82 @@ vec4 TransferFunction(float density) {
 	return vec4(color, alpha);
 }
 
+vec4 getColorFromDensity(float density, vec3 position) {
+	vec3 color;
+	float normDensity = exp(clamp(density, 0.0, 1.0)); // Normalize density between 0 and 
+	normDensity *= length(position);
+
+	// Define color bands
+	//vec3 color1 = vec3(0.0, 0.0, 1.0); // Blue
+	//vec3 color2 = vec3(0.0, 1.0, 1.0); // Cyan
+	//vec3 color3 = vec3(0.0, 1.0, 0.0); // Green
+	//vec3 color4 = vec3(1.0, 1.0, 0.0); // Yellow
+	//vec3 color5 = vec3(1.0, 0.0, 0.0); // Red
+
+	// Interpolate between colors based on normalized density
+	if (normDensity < 0.6) {
+		color = mix(color1, color2, normDensity / 0.6);
+	}
+	else if (normDensity < 0.7) {
+		color = mix(color2, color3, (normDensity - 0.6) / 0.1);
+	}
+	else if (normDensity < 0.8) {
+		color = mix(color3, color4, (normDensity - 0.7) / 0.1);
+	}
+	else if (normDensity < 0.9) {
+		color = mix(color4, color5, (normDensity - 0.8) / 0.1);
+	}
+	else {
+		color = color5;
+	}
+
+
+	return vec4(color, density); // Full opacity
+}
+
+float ambientOcclusion(vec3 pos, vec3 normal, float scale, float bias, int samples) {
+	float ao = 0.0;
+	float weight = 1.0;
+
+	for (int i = 0; i < samples; ++i) {
+		float dist = float(i) / float(samples) * scale;
+		vec3 samplePos = pos + normal * (dist + bias);
+		float sampleDensity = texture(densityTexture, samplePos).r;
+		ao += (dist - bias - sampleDensity) * weight;
+		weight *= 0.5;
+	}
+
+	//return ao;
+	return clamp(1.0 - ao / float(samples), 0.0, 1.0);
+}
+
+vec3 calculateNormal(vec3 pos) {
+	float eps = 0.001;  // A small value to offset the position for gradient calculation
+	vec3 normal;
+
+	// Sample the density field at points around the current position
+	float densityCenter = texture(densityTexture, pos).r;
+	float densityX = texture(densityTexture, vec3(pos.x + eps, pos.y, pos.z)).r;
+	float densityY = texture(densityTexture, vec3(pos.x, pos.y + eps, pos.z)).r;
+	float densityZ = texture(densityTexture, vec3(pos.x, pos.y, pos.z + eps)).r;
+
+	// Calculate gradient (central difference)
+	normal.x = densityX - densityCenter;
+	normal.y = densityY - densityCenter;
+	normal.z = densityZ - densityCenter;
+
+	// Normalize to get the unit normal
+	return normalize(normal);
+}
+
 
 void main(void)
 {
-	vec3 ray_origin = cam_pos;
+	//if (v_density <  1.0) discard;
+	vec3 ray_pos = cam_pos;
+	fragcolor = vec4(1.0, 0.1, 1.0, 1.0);
 
-	vec2 ndc_pos = 2.0 * vec2(gl_FragCoord.x / 1920, gl_FragCoord.y / 1080) - 1.0;
+	vec2 ndc_pos = 2.0 * vec2(gl_FragCoord.x / window_width, gl_FragCoord.y / window_height) - 1.0;
 	vec4 cam_dir = inverse(P) * vec4(ndc_pos, 1.0, 1.0);
 	cam_dir /= cam_dir.w;
 	cam_dir = vec4(cam_dir.xyz, 0.0);
@@ -190,24 +273,47 @@ void main(void)
 
 	vec4 accumulate_color = vec4(0.0);
 	float accumulate_alpha = 0.0;
-	//float step_size = 0.005;
-	float max_step_size = 10.0;
+	float accumulated_density = 0.0;
+	float step_size = 0.0005;
+	float max_length = 10.0;
+	float density = 0.0;
+	vec4 color = vec4(0.0);
+	float t = 0.0;
 
-	for (float t = 0.0; t < max_step_size; t += step_size)
-	{
-		vec3 sample_pos = ray_origin + t * ray_dir.xyz;
-		float density = MandelbulbDensity(sample_pos, 2.0, max_iterations, order);
-		//vec4 sample_color = TransferFunction(density);
-		vec4 sample_color = vec4(vec2(length(sample_pos) / sqrt(2.0)), 1.0, density);
+	for (t; t < max_length; t += step_size) {
+		float density = texture(densityTexture, ray_pos+0.5).r;
+		accumulated_density += density;
 
-		accumulate_color = sample_color;
-		//accumulate_color.rgb += (1.0 - accumulate_alpha)  * sample_color.rgb;
-		accumulate_alpha += (1 - accumulate_alpha) * sample_color.a;
-
-		if (accumulate_alpha >= 0.95) break;
+		ray_pos += ray_dir.xyz * step_size;
+		if (accumulated_density >= 1.0) break;
 	}
-	fragcolor = accumulate_color;
 
+	vec3 normal = calculateNormal(ray_pos+0.5); // Implement this function to calculate the normal
+	float ao = ambientOcclusion(ray_pos+0.5, normal, 1.0, 0.01, 5); // Adjust scale, bias, and samples as needed
+
+
+	color = getColorFromDensity(accumulated_density, ray_pos);
+	color.rgb *= ao;
+	fragcolor = color;
+	//fragcolor = vec4(vec3(ao), accumulated_density);
+	//fragcolor = vec4(1.0, 0.0, 1.0, 1.0);
+
+
+
+	//for (float t = 0.0; t <= max_step_size; t += step_size) {
+	//	vec3 samplePos = ray_origin + t * ray_dir.xyz;
+	//	density = texture(voxelTexture, samplePos).r;
+	//	vec4 sampleColor = TransferFunction(density); // Convert density to RGBA
+
+	//	// Simple front-to-back compositing
+	//	//accumulatedColor.rgb += (1.0 - accumulatedAlpha) * sampleColor.a * sampleColor.rgb;
+	//	accumulate_alpha += (1.0 - accumulate_alpha) * sampleColor.a;
+
+	//	// Early termination for performance
+	//	if (accumulate_alpha >= 1.0) break;
+	//}
+	//fragcolor = vec4(vec2(length(v_pos)) / sqrt(2.0), 1.0, v_density);
+	//fragcolor = vec4(1.0, 0.0, 1.0, 1.0);
 
 	// max_iterations and order seem to be different for different fractals here are some good values to start with
 	// max_iterations and order can be changed through the GUI
